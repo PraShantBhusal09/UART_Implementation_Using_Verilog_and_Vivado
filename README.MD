@@ -29,12 +29,12 @@ The baud-rate generator uses the 50 MHz system clock and two counters to generat
 The receiver enable frequency is approximately 16 times the nominal 9600 baud rate, allowing the receiver to sample the serial input at a faster rate.
 
 $$
-f_{\text{tx\_enb}} = \frac{50,000,000}{5208}
+f_{\mathrm{TX}} = \frac{50,000,000}{5208}
 \approx 9600.61\ \text{Hz}
 $$
 
 $$
-f_{\text{rx\_enb}} = \frac{50,000,000}{325}
+f_{\mathrm{RX}} = \frac{50,000,000}{325}
 \approx 153846.15\ \text{Hz}
 $$
 
