@@ -1,62 +1,82 @@
-
 # UART Implementation Using Verilog HDL and Xilinx Vivado
 
 ## Overview
 
-This project implements a Universal Asynchronous Receiver and Transmitter (UART) using Verilog HDL. The design is developed and simulated using Xilinx Vivado.
+This project implements an 8-bit UART transmitter and receiver using Verilog HDL. The design is simulated in Xilinx Vivado and uses a 50 MHz system clock with a nominal baud rate of 9600 bps.
 
-The UART system consists of a Baud Rate Generator, UART Transmitter, UART Receiver, and Top Module. A Verilog testbench is developed to verify the functionality of the complete UART system through loopback communication.
+The UART uses the **8N1 frame format**: one start bit, eight data bits, no parity bit, and one stop bit. Data is transmitted least-significant bit (LSB) first.
 
-## Design Specifications
+## Design Architecture
 
-| Parameter | Value |
+The project contains four RTL modules:
+
+| Module | Description |
 |---|---|
-| Clock Frequency | 50 MHz |
-| Baud Rate | 9600 bps |
-| Data Bits | 8 |
-| Start Bit | 1 |
-| Stop Bit | 1 |
-| Parity | None |
-| Frame Format | 8N1 |
-| RX Oversampling | 16x |
+| `baud_rate_generator.v` | Generates clock-enable pulses for the transmitter and receiver. |
+| `transmitter.v` | Converts an 8-bit parallel input into a serial UART frame. |
+| `receiver.v` | Samples the serial input and reconstructs the 8-bit data. |
+| `uart_top.v` | Connects the baud-rate generator, transmitter, and receiver. |
 
-## Project Architecture
+The testbench, `uart_tb.v`, connects the transmitter output (`tx`) directly to the receiver input (`rx`) to verify the design through loopback communication.
 
-The UART design is divided into four main RTL modules.
+## Baud Rate Generation
 
-### 1. Baud Rate Generator
+The baud-rate generator uses the 50 MHz system clock and two counters to generate enable pulses. These are clock-enable signals, not separate clocks; all modules continue to use the main system clock.
 
-Generates enable signals for the UART transmitter and receiver based on the system clock frequency and baud rate.
+- **Transmitter:** The counter runs from 0 to 5207, producing an enable frequency of approximately 9600.61 Hz.
+- **Receiver:** The counter runs from 0 to 324, producing an enable frequency of approximately 153846.15 Hz.
 
-### 2. UART Transmitter
+The receiver enable frequency is approximately 16 times the nominal 9600 baud rate, allowing the receiver to sample the serial input at a faster rate.
 
-Converts 8-bit parallel data into serial data.
+$$
+f_{\text{tx\_enb}} = \frac{50,000,000}{5208}
+\approx 9600.61\ \text{Hz}
+$$
 
-The transmitter uses four FSM states:
+$$
+f_{\text{rx\_enb}} = \frac{50,000,000}{325}
+\approx 153846.15\ \text{Hz}
+$$
 
-- IDLE
-- START
-- DATA
-- STOP
+## Transmitter and Receiver Operation
 
-### 3. UART Receiver
+### Transmitter
 
-Receives serial data and converts it into 8-bit parallel data using a 16x oversampling technique.
+The transmitter uses a finite state machine (FSM) to control the transmission process. When `wr_en` is asserted while the transmitter is idle, it stores `data_in` and begins sending a UART frame.
 
-The receiver uses three FSM states:
+It sends the start bit low, followed by the eight data bits in LSB-first order. Each bit is advanced by the `tx_enb` enable pulse. The transmitter then sends the stop bit high and returns to the idle state. The `busy` output indicates when the transmitter is active.
 
-- START
-- DATA_OUT
-- STOP
+### Receiver
 
-### 4. UART Top Module
+The receiver uses an FSM and a 4-bit sample counter. In the start state, it monitors `rx` and increments the sample counter when the input is low. When the counter reaches the start-detection threshold, the receiver moves to data reception.
 
-Connects the Baud Rate Generator, Transmitter, and Receiver into one complete UART system.
+During data reception, it samples one bit after each 16 receiver-enable events and stores the bit in an 8-bit temporary register, starting at bit 0 (LSB). After all eight bits have been sampled, it waits through the stop-bit interval, copies the temporary byte to `data_out`, and asserts `rdy`.
+
+The `rdy` signal remains asserted until `rdy_clr` or reset clears it.
+
+**Current implementation note:** The receiver does not clear the start-detection sample counter when `rx` returns high. Therefore, the start detection does not guarantee eight consecutive low samples. The receiver also does not check that `rx` is high during the stop-bit interval; `rdy` indicates completion of the receive sequence, not stop-bit validation.
+
+## Simulation and Verification
+
+The testbench generates a 50 MHz clock (20 ns period), applies reset, and tests two data values using internal loopback:
+
+| Test | Transmitted byte | Expected received byte |
+|---|---|---|
+| 1 | `8'h41` | `8'h41` |
+| 2 | `8'h55` | `8'h55` |
+
+The testbench waits for `rdy`, compares `data_out` with the transmitted byte, and prints a PASS or FAIL message in the Vivado simulation console.
+
+## Simulation Waveform
+
+The waveform below shows the UART loopback simulation. The `tx` and `rx` signals carry the same serial data because they are directly connected in the testbench. The received byte appears on `data_out`, and `rdy` indicates that reception has completed.
+
+![UART Simulation Waveform](images/uart_waveform.png)
 
 ## Project Structure
 
 ```text
-UART-Implementation-Using-Verilog-and-Vivado/
+UART_Implementation_Using_Verilog_and_Vivado/
 │
 ├── rtl/
 │   ├── baud_rate_generator.v
@@ -73,84 +93,25 @@ UART-Implementation-Using-Verilog-and-Vivado/
 └── README.md
 ```
 
-### Folder Description
+## Running the Project in Vivado
 
-- **rtl/**: Contains all Verilog RTL design modules.
-- **tb/**: Contains the Verilog testbench used for simulation.
-- **images/**: Contains the Vivado simulation waveform screenshot.
-- **README.md**: Contains project documentation and simulation results.
+1. Open Xilinx Vivado and create an RTL project.
+2. Add the Verilog files from the `rtl/` folder as design sources.
+3. Add `tb/uart_tb.v` as a simulation source.
+4. Set `uart_tb` as the simulation top module.
+5. Run **Run Simulation → Run Behavioral Simulation**.
+6. Observe the UART signals in the waveform window and check the Tcl console for the test results.
 
-## Simulation and Verification
+## Notes and Possible Improvements
 
-The complete UART design was simulated using Xilinx Vivado Behavioral Simulation.
-
-An internal loopback connection was used, where the transmitter output (TX) was connected to the receiver input (RX).
-
-Two test cases were performed:
-
-| Test Case | Transmitted Data | Received Data | Result |
-|---|---|---|---|
-| 1 | 8'h41 | 8'h41 | PASS |
-| 2 | 8'h55 | 8'h55 | PASS |
-
-## Waveform
-
-The following waveform was obtained from the Vivado behavioral simulation of the UART transmitter and receiver.
-
-It shows the UART loopback communication, including transmission and reception of the test data bytes `0x41` and `0x55`.
-
-![UART Simulation Waveform](images/uart_waveform.png)
-
-### Waveform Signals
-
-- `clk`: 50 MHz system clock.
-- `rst`: Active-high reset signal.
-- `tx`: Serial data transmitted by the UART transmitter.
-- `rx`: Serial data received by the UART receiver.
-- `data_out`: Received 8-bit parallel data.
-- `rdy`: Indicates that received data is ready.
-
-Both test cases passed successfully:
-
-- First test: `0x41` — PASSED
-- Second test: `0x55` — PASSED
-
-## Tools and Technologies
-
-- Verilog HDL
-- Xilinx Vivado
-- Vivado XSim Simulator
-- Visual Studio Code
-
-## Project Status
-
-- [x] Baud Rate Generator
-- [x] UART Transmitter
-- [x] UART Receiver
-- [x] UART Top Module
-- [x] Verilog Testbench
-- [x] Behavioral Simulation
-- [x] Loopback Verification
-
-## Future Work
-
-- [ ] FPGA Synthesis and Implementation
-- [ ] XDC Pin Constraints
-- [ ] Bitstream Generation
-- [ ] Hardware Testing on an FPGA Development Board
-- [ ] Communication with an External UART Device
+- The design uses an active-high synchronous reset.
+- The generated transmitter and receiver enable rates are approximate; they are not an exact 16:1 ratio.
+- Add a reset of the receiver's start-detection counter when `rx` is high.
+- Validate the stop-bit level and add framing-error detection.
+- Add an input synchronizer for an external asynchronous RX signal.
+- Test more data patterns and back-to-back frames.
+- For FPGA hardware use, add the appropriate XDC pin constraints and verify the design on the target board.
 
 ## Conclusion
 
-A UART Transmitter and Receiver have been successfully designed using Verilog HDL and simulated using Xilinx Vivado.
-
-The design successfully transmitted and received two 8-bit data values through loopback communication. Both test cases passed behavioral simulation.
-
-This project provides practical experience with UART communication, Finite State Machines (FSM), baud rate generation, serial data transmission, and reception using Verilog HDL.
-
----
-
-**Project:** UART Implementation Using Verilog HDL  
-**Tool:** Xilinx Vivado  
-**Language:** Verilog HDL  
-**Simulation:** Vivado XSim
+This project demonstrates a basic UART communication system in Verilog, including baud-rate enable generation, FSM-based serial transmission and reception, and loopback verification in Vivado. The testbench checks that the receiver reconstructs the two transmitted test bytes, `8'h41` and `8'h55`.
